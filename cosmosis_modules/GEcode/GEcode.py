@@ -1,0 +1,94 @@
+#!python
+from cosmosis.datablock import names, option_section
+import GEcode_calc
+
+# We have a collection of commonly used pre-defined block section names.
+# If none of the names here is relevant for your calculation you can use any
+# string you want instead.
+cosmo = names.cosmological_parameters
+#GEcode = names.GEcode
+
+def get_optional_params(block, section, names):
+    """Get values from a datablock from a list of names.
+    
+    If the entries of names are tuples or lists of length 2, they are assumed
+    to correspond to (cosmosis_name, output_name), where cosmosis_name is the 
+    datablock key and output_name the params dict key."""
+    params = {}    
+    for name in names:
+        cosmosis_name = name
+        output_name = name
+        if isinstance(name, (list, tuple)):
+            if len(name) == 2 and isinstance(name[1], str):
+                # Output name specified
+                output_name = name[1]
+                cosmosis_name = name[0]
+        if block.has_value(section, cosmosis_name):
+            params[output_name] = block[section, cosmosis_name]
+    return params
+
+def setup(options):
+    #This function is called once per processor per chain.
+    #It is a chance to read any fixed options from the configuration file,
+    #load any data, or do any calculations that are fixed once.
+
+    #Use this syntax to get a single parameter from the ini file section
+    #for this module.  There is no type checking here - you get whatever the user
+    #put in.
+    #mode = options[option_section, "mode"]
+
+    #The call above will crash if "mode" is not found in the ini file.
+    #Sometimes you want a default if nothing is found:
+    #high_accuracy = options.get(option_section, "high_accuracy", default=False)
+
+    #Now you have the input options you can do any useful preparation
+    #you want.  Maybe load some data, or do a one-off calculation.
+    #loaded_data = GEcode_calc.prepare_something(mode)
+
+    #Whatever you return here will be saved by the system and the function below
+    #will get it back.  You could return 0 if you won't need anything.
+    return 1
+ 
+
+def execute(block, config):
+    #This function is called every time you have a new sample of cosmological and other parameters.
+    #It is the main workhorse of the code. The block contains the parameters and results of any 
+    #earlier modules, and the config is what we loaded earlier.
+
+    # Just a simple rename for clarity.
+    loaded_data = config
+    #r = load_parameters(block, loaded_data)
+
+    #need linear and NL Pm from the block
+    section = names.matter_power_nl # matter_power_lin  
+    k, z, P = (block.get_grid(section, "k_h", "z", "P_k"))
+
+    section_lin = names.matter_power_lin # matter_power_lin                                                                                     
+    k_lin, z_lin, P_lin = (block.get_grid(section_lin, "k_h", "z", "P_k"))
+    #print(P.shape,P_lin.shape)
+    #This loads a value from the section "cosmological_parameters" that we read above.
+    #omega_m = block[cosmo, "omega_m"]
+    Amod=block["GEcode", "Amod"]
+    
+    # Do the main calculation that is the purpose of this module.
+    # It is good to make this execute function as simple as possible
+    # In my case, modulate the Pm
+    Pm_mod = GEcode_calc.modify(k, z, P, k_lin, z_lin, P_lin, Amod) #, r)
+    #print(P.shape)
+    #print(len(Pm_mod))
+    #print(z,z_lin)
+    #print(k.shape,k_lin.shape)
+    # Now we have got a result we save it back to the block like this.
+    block["GEcode", "Amod"] = Amod #this is one parameter
+    block.replace_grid(section, "k_h", k, "z", z, "P_k", Pm_mod) #this is a grid
+
+    #print(P.shape)
+    
+
+    #We tell CosmoSIS that everything went fine by returning zero
+    return 0
+
+def cleanup(config):
+    # Usually python modules do not need to do anything here.
+    # We just leave it in out of pedantic completeness.
+    pass
